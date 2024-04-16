@@ -2,7 +2,7 @@
 
 # Why this project?
 
-The python script supervisord is a powerful tool used by a lot of guys to manage the processes. I like  supervisord too.
+The python script supervisord is a powerful tool used by a lot of guys to manage the processes. I like supervisord too.
 
 But this tool requires that the big python environment be installed in target system. In some situation, for example in the docker environment, the python is too big for us.
 

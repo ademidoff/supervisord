@@ -1,6 +1,7 @@
 .idea
 supervisord
-supervisord.exe
+supervisord.log
+supervisord.pid
 test.log*
 .tags*
 debug

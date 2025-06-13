@@ -1,5 +1,5 @@
-//go:build !windows && !freebsd
-// +build !windows,!freebsd
+//go:build !freebsd
+// +build !freebsd
 
 package main
 

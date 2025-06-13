@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"unicode"
@@ -34,11 +33,7 @@ func init() {
 	if logFormat == "json" {
 		log.SetFormatter(&log.JSONFormatter{})
 	} else {
-		if runtime.GOOS == "windows" {
-			log.SetFormatter(&log.TextFormatter{DisableColors: true, FullTimestamp: true})
-		} else {
-			log.SetFormatter(&log.TextFormatter{DisableColors: false, FullTimestamp: true})
-		}
+		log.SetFormatter(&log.TextFormatter{DisableColors: false, FullTimestamp: true})
 	}
 	log.SetLevel(log.DebugLevel)
 }
@@ -165,7 +160,9 @@ func getSupervisordLogFile(configFile string) string {
 }
 
 func main() {
-	if BuildVersion != "" { VERSION = BuildVersion }
+	if BuildVersion != "" {
+		VERSION = BuildVersion
+	}
 	ReapZombie()
 
 	// when execute `supervisord` without sub-command, it should start the server

@@ -1,4 +1,4 @@
-// +build !windows,!nacl,!plan9
+// +build !nacl,!plan9
 
 package logger
 

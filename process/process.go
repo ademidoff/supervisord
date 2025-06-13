@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mitchellh/go-ps"
 	"github.com/ochinchina/filechangemonitor"
 	"github.com/ochinchina/supervisord/config"
 	"github.com/ochinchina/supervisord/events"
@@ -226,7 +224,7 @@ func (p *Process) GetDescription() string {
 		}
 		return fmt.Sprintf("pid %d, uptime %d:%02d:%02d", p.cmd.Process.Pid, hours%24, minutes%60, seconds%60)
 	} else if p.state != Stopped {
-                if p.stopTime.Unix() > 0 {
+		if p.stopTime.Unix() > 0 {
 			return p.stopTime.String()
 		}
 	}
@@ -398,10 +396,6 @@ func (p *Process) getExitCodes() []int {
 // check if the process is running or not
 func (p *Process) isRunning() bool {
 	if p.cmd != nil && p.cmd.Process != nil {
-		if runtime.GOOS == "windows" {
-			proc, err := ps.FindProcess(p.cmd.Process.Pid)
-			return proc != nil && err == nil
-		}
 		return p.cmd.Process.Signal(syscall.Signal(0)) == nil
 	}
 	return false
@@ -1055,7 +1049,7 @@ func (p *Process) Stop(wait bool) {
 		log.WithFields(log.Fields{"program": p.GetName()}).Info("program is not running")
 		return
 	}
-  
+
 	log.WithFields(log.Fields{"program": p.GetName()}).Info("stopping the program")
 	p.changeStateTo(Stopping)
 	sigs := strings.Fields(p.config.GetString("stopsignal", "TERM"))

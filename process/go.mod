@@ -3,7 +3,6 @@ module github.com/ochinchina/supervisord/process
 go 1.24
 
 require (
-	github.com/mitchellh/go-ps v1.0.0
 	github.com/ochinchina/filechangemonitor v0.3.1
 	github.com/ochinchina/supervisord/config v0.0.0-20250610055946-d5a5470d11af
 	github.com/ochinchina/supervisord/events v0.0.0-20250610055946-d5a5470d11af
@@ -30,22 +29,4 @@ require (
 	github.com/rogpeppe/go-charset v0.0.0-20190617161244-0dc95cdf6f31 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
-)
-
-require (
-	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cespare/xxhash/v2 v2.1.1 // indirect
-	github.com/golang/protobuf v1.5.0 // indirect
-	github.com/gorilla/rpc v1.2.0 // indirect
-	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
-	github.com/ochinchina/go-ini v1.0.1 // indirect
-	github.com/ochinchina/gorilla-xmlrpc v0.0.0-20171012055324-ecf2fe693a2c // indirect
-	github.com/ochinchina/supervisord/faults v0.0.0-20220721095143-c2527852d28f // indirect
-	github.com/ochinchina/supervisord/util v0.0.0-20220721095143-c2527852d28f // indirect
-	github.com/prometheus/client_model v0.2.0 // indirect
-	github.com/prometheus/common v0.26.0 // indirect
-	github.com/prometheus/procfs v0.6.0 // indirect
-	github.com/rogpeppe/go-charset v0.0.0-20190617161244-0dc95cdf6f31 // indirect
-	golang.org/x/sys v0.1.0 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 )

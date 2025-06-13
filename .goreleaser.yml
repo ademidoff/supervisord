@@ -21,13 +21,11 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
       - arm
     goarm:
-      - "6"
       - "7"
 
   - id: static
@@ -92,7 +90,7 @@ archives:
 
 release:
   github:
-    owner: ochinchina
+    owner: ademidoff
     name: supervisord
   draft: false
   prerelease: auto

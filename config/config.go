@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"maps"
+
 	"github.com/hashicorp/go-envparse"
 	"github.com/ochinchina/go-ini"
 	log "github.com/sirupsen/logrus"
@@ -133,32 +135,38 @@ func (c *Config) Load() ([]string, error) {
 
 func (c *Config) getIncludeFiles(cfg *ini.Ini) []string {
 	result := make([]string, 0)
-	if includeSection, err := cfg.GetSection("include"); err == nil {
-		key, err := includeSection.GetValue("files")
-		if err == nil {
-			env := NewStringExpression("here", c.GetConfigFileDir())
-			files := strings.Fields(key)
-			for _, fRaw := range files {
-				var dir string
-				f, err := env.Eval(fRaw)
-				if err != nil {
-					continue
-				}
-				if filepath.IsAbs(f) {
-					dir = filepath.Dir(f)
-				} else {
-					dir = filepath.Join(c.GetConfigFileDir(), filepath.Dir(f))
-				}
-				fileInfos, err := os.ReadDir(dir)
-				if err == nil {
-					goPattern := toRegexp(filepath.Base(f))
-					for _, fileInfo := range fileInfos {
-						if matched, err := regexp.MatchString(goPattern, fileInfo.Name()); matched && err == nil {
-							result = append(result, filepath.Join(dir, fileInfo.Name()))
-						}
-					}
-				}
+	includeSection, err := cfg.GetSection("include")
+	if err != nil {
+		log.WithFields(log.Fields{"file": c.configFile}).Info("no include section found")
+		return result
+	}
 
+	key, err := includeSection.GetValue("files")
+	if err != nil {
+		log.WithFields(log.Fields{"file": c.configFile}).Info("no files section found")
+		return result
+	}
+
+	env := NewStringExpression("here", c.GetConfigFileDir())
+	files := strings.Fields(key)
+	for _, fRaw := range files {
+		var dir string
+		f, err := env.Eval(fRaw)
+		if err != nil {
+			continue
+		}
+		if filepath.IsAbs(f) {
+			dir = filepath.Dir(f)
+		} else {
+			dir = filepath.Join(c.GetConfigFileDir(), filepath.Dir(f))
+		}
+		fileInfos, err := os.ReadDir(dir)
+		if err == nil {
+			goPattern := toRegexp(filepath.Base(f))
+			for _, fileInfo := range fileInfos {
+				if matched, err := regexp.MatchString(goPattern, fileInfo.Name()); matched && err == nil {
+					result = append(result, filepath.Join(dir, fileInfo.Name()))
+				}
 			}
 		}
 	}
@@ -400,9 +408,7 @@ func parseEnvFiles(s string) *map[string]string {
 			}).Error("Parse env file failed: " + envFilePath)
 			continue
 		}
-		for k, v := range r {
-			result[k] = v
-		}
+		maps.Copy(result, r)
 	}
 	return &result
 }

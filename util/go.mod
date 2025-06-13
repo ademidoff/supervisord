@@ -1,3 +1,3 @@
 module github.com/ochinchina/supervisord/util
 
-go 1.22
+go 1.24

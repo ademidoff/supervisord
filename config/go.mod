@@ -1,6 +1,7 @@
 module github.com/ochinchina/supervisord/config
 
-go 1.22
+go 1.24
+
 
 require (
 	github.com/hashicorp/go-envparse v0.1.0
@@ -12,4 +13,8 @@ require (
 require (
 	github.com/stretchr/testify v1.9.0 // indirect
 	golang.org/x/sys v0.19.0 // indirect
+	github.com/ochinchina/supervisord/util v0.0.0-20250610055946-d5a5470d11af
+	github.com/sirupsen/logrus v1.9.3
 )
+
+require golang.org/x/sys v0.33.0 // indirect

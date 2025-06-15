@@ -18,7 +18,7 @@ jobs:
 
       - name: Install UPX
         env:
-          UPXVER: "4.0.2"
+          UPXVER: "5.0.1"
         run: |
           if [[ ! -f "upx/${UPXVER}/upx" ]]; then
             echo "Installing upx .."
@@ -32,15 +32,15 @@ jobs:
           upx --version | grep -E '^upx'
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.18
+          go-version-file: 'go.mod'
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
           args: release
         env:
-          GITHUB_TOKEN: ${{ secrets.GA_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

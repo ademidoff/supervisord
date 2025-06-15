@@ -10,7 +10,7 @@ LDFLAGS := -X main.BuildVersion=$(GIT_VERSION) -X main.BuildCommit=$(GIT_COMMIT)
 # Default build target (cross-platform)
 build:
 	go generate
-	go build -tags release -ldflags "$(LDFLAGS)" -o supervisord
+	go build -tags release -ldflags "$(LDFLAGS) -s" -o supervisord
 
 # Show version information that will be injected
 version:
@@ -19,8 +19,8 @@ version:
 
 build-linux:
 	go generate
-	go build -tags release -a -ldflags "$(LDFLAGS) -linkmode external -extldflags -static" -o supervisord
+	GOOS=linux GOARCH=amd64 go build -tags release -a -ldflags "$(LDFLAGS) -s" -o supervisord
 
 build-darwin:
 	go generate
-	CGO_ENABLED=0 go build -tags release -a -ldflags "$(LDFLAGS) -extldflags -static -s" -o supervisord
+	GOOS=darwin GOARCH=arm64 go build -tags release -a -ldflags "$(LDFLAGS) -s" -o supervisord

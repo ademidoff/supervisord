@@ -473,7 +473,7 @@ func (wc *CmdCheckWrapperCommand) Execute(args []string) error {
 
 func init() {
 	ctlCmd, _ := parser.AddCommand("ctl",
-		"Control a running daemon",
+		"Control the running daemon",
 		"The ctl subcommand resembles supervisorctl command of original daemon.",
 		&ctlCommand)
 	ctlCmd.AddCommand("status",

@@ -121,7 +121,7 @@ func findSupervisordConf() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("fail to find supervisord.conf")
+	return "", fmt.Errorf("failed to find supervisord.conf")
 }
 
 func runServer() {

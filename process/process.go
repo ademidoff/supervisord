@@ -632,7 +632,7 @@ func (p *Process) run(finishCb func()) {
 				finishCbWrapper()
 			}()
 		}
-		log.WithFields(log.Fields{"program": p.GetName()}).Debug("check program is starting and wait if it exit")
+		log.WithFields(log.Fields{"program": p.GetName()}).Debug("check program is starting and wait if it exits")
 		p.lock.Unlock()
 
 		procExitC := make(chan struct{})

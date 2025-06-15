@@ -41,19 +41,17 @@ func (p *ProcessSorter) initDepends(programConfigs []*Entry) {
 		if config.IsProgram() && config.HasParameter("depends_on") {
 			dependsOn := config.GetString("depends_on", "")
 			progName := config.GetProgramName()
-			for _, dependsOnProg := range strings.Split(dependsOn, ",") {
+			for dependsOnProg := range strings.SplitSeq(dependsOn, ",") {
 				dependsOnProg = strings.TrimSpace(dependsOnProg)
 				if dependsOnProg != "" {
 					if _, ok := p.dependsOnGraph[progName]; !ok {
 						p.dependsOnGraph[progName] = make([]string, 0)
 					}
 					p.dependsOnGraph[progName] = append(p.dependsOnGraph[progName], dependsOnProg)
-
 				}
 			}
 		}
 	}
-
 }
 
 func (p *ProcessSorter) initProgramWithoutDepends(programConfigs []*Entry) {

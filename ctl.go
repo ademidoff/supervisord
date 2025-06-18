@@ -242,9 +242,9 @@ func (x *CtlCommand) restartProcesses(rpcc *xmlrpcclient.XMLRPCClient, processes
 func (x *CtlCommand) shutdown(rpcc *xmlrpcclient.XMLRPCClient) {
 	if reply, err := rpcc.Shutdown(); err == nil {
 		if reply.Value {
-			fmt.Printf("Shut Down\n")
+			fmt.Printf("Shutting down supervisord...\n")
 		} else {
-			fmt.Printf("Hmmm! Something gone wrong?!\n")
+			fmt.Printf("Hmmm... Something gone wrong?!\n")
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -458,7 +458,6 @@ func (lc *LogtailCommand) tailLog(program string, dev string) error {
 			os.Stderr.Write(buf[0:n])
 		}
 	}
-	return nil
 }
 
 // Execute check if the number of arguments is ok

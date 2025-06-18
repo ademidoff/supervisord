@@ -12,6 +12,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/ochinchina/go-ini"
+	"github.com/ochinchina/go-reaper"
 	"github.com/ochinchina/supervisord/config"
 	"github.com/ochinchina/supervisord/logger"
 	log "github.com/sirupsen/logrus"
@@ -42,6 +43,7 @@ func initSignals(s *Supervisor) {
 	go func() {
 		sig := <-sigs
 		log.WithFields(log.Fields{"signal": sig}).Info("receive a signal to stop all process & exit")
+		s.procMgr.StopDependencyMonitor()
 		s.procMgr.StopAllProcesses()
 		os.Exit(-1)
 	}()
@@ -93,21 +95,23 @@ func loadEnvFile() {
 
 // find the supervisord.conf in following order:
 //
-// 1. $CWD/supervisord.conf
-// 2. $CWD/etc/supervisord.conf
+// 1. $PWD/supervisord.conf
+// 2. $PWD/etc/supervisord.conf
 // 3. /etc/supervisord.conf
 // 4. /etc/supervisor/supervisord.conf (since Supervisor 3.3.0)
 // 5. ../etc/supervisord.conf (Relative to the executable)
 // 6. ../supervisord.conf (Relative to the executable)
 func findSupervisordConf() (string, error) {
-	possibleSupervisordConf := []string{options.Configuration,
+	possibleSupervisordConf := []string{
+		options.Configuration,
 		"./supervisord.ini",
 		"./etc/supervisord.conf",
 		"/etc/supervisord.conf",
 		"/etc/supervisor/supervisord.conf",
 		"../etc/supervisord.conf",
 		"../supervisord.conf",
-		"./supervisord.conf"}
+		"./supervisord.conf",
+	}
 
 	for _, file := range possibleSupervisordConf {
 		if _, err := os.Stat(file); err == nil {
@@ -126,7 +130,7 @@ func runServer() {
 	// infinite loop for handling Restart ('reload' command)
 	loadEnvFile()
 	for {
-		if len(options.Configuration) <= 0 {
+		if options.Configuration == "" {
 			options.Configuration, _ = findSupervisordConf()
 		}
 		s := NewSupervisor(options.Configuration)
@@ -158,7 +162,7 @@ func getSupervisordLogFile(configFile string) string {
 }
 
 func main() {
-	ReapZombie()
+	go reaper.Reap()
 
 	// when execute `supervisord` without sub-command, it should start the server
 	parser.Command.SubcommandsOptional = true

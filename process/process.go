@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,6 +82,9 @@ func (p State) String() string {
 	}
 }
 
+// StateChangeCallback is called when process state changes
+type StateChangeCallback func(proc *Process, oldState State, newState State)
+
 // Process the program process management data
 type Process struct {
 	supervisorID string
@@ -92,12 +96,13 @@ type Process struct {
 	// true if process is starting
 	inStart bool
 	// true if the process is stopped by user
-	stopByUser bool
-	retryTimes *int32
-	lock       sync.RWMutex
-	stdin      io.WriteCloser
-	StdoutLog  logger.Logger
-	StderrLog  logger.Logger
+	stopByUser          bool
+	retryTimes          *int32
+	lock                sync.RWMutex
+	stdin               io.WriteCloser
+	StdoutLog           logger.Logger
+	StderrLog           logger.Logger
+	stateChangeCallback StateChangeCallback
 }
 
 // NewProcess creates new Process object
@@ -110,7 +115,8 @@ func NewProcess(supervisorID string, config *config.Entry) *Process {
 		state:      Stopped,
 		inStart:    false,
 		stopByUser: false,
-		retryTimes: new(int32)}
+		retryTimes: new(int32),
+	}
 	proc.config = config
 	proc.cmd = nil
 	proc.addToCron()
@@ -140,7 +146,7 @@ func (p *Process) addToCron() {
 // Start process
 // Args:
 //
-//	wait - true, wait the program started or failed
+//	wait - true, wait until the program has started or failed
 func (p *Process) Start(wait bool) {
 	log.WithFields(log.Fields{"program": p.GetName()}).Info("try to start program")
 	p.lock.Lock()
@@ -162,7 +168,7 @@ func (p *Process) Start(wait bool) {
 
 	go func() {
 		for {
-			// we'll do retry start if it sets.
+			// We'll restart if 'autorestart' is set
 			p.run(func() {
 				if wait {
 					runCond.L.Lock()
@@ -170,16 +176,16 @@ func (p *Process) Start(wait bool) {
 					runCond.L.Unlock()
 				}
 			})
-			// avoid print too many logs if fail to start program too quickly
+			// avoid print too many logs if failed to start program too quickly
 			if time.Now().Unix()-p.startTime.Unix() < 2 {
-				time.Sleep(5 * time.Second)
+				time.Sleep(3 * time.Second)
 			}
 			if p.stopByUser {
-				log.WithFields(log.Fields{"program": p.GetName()}).Info("program stopped by user, don't start it again")
+				log.WithFields(log.Fields{"program": p.GetName()}).Debug("Program stopped by user, not starting")
 				break
 			}
 			if !p.isAutoRestart() {
-				log.WithFields(log.Fields{"program": p.GetName()}).Info("Don't start the stopped program because its autorestart flag is false")
+				log.WithFields(log.Fields{"program": p.GetName(), "autorestart": false}).Debug("Don't start the stopped program")
 				break
 			}
 		}
@@ -215,7 +221,7 @@ func (p *Process) GetDescription() string {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	if p.state == Running {
-		seconds := int(time.Now().Sub(p.startTime).Seconds())
+		seconds := int(time.Since(p.startTime).Seconds())
 		minutes := seconds / 60
 		hours := minutes / 60
 		days := hours / 24
@@ -341,11 +347,12 @@ func (p *Process) SendProcessStdin(chars string) error {
 func (p *Process) isAutoRestart() bool {
 	autoRestart := p.config.GetString("autorestart", "unexpected")
 
-	if autoRestart == "false" {
+	switch autoRestart {
+	case "false":
 		return false
-	} else if autoRestart == "true" {
+	case "true":
 		return true
-	} else {
+	default:
 		p.lock.RLock()
 		defer p.lock.RUnlock()
 		if p.cmd != nil && p.cmd.ProcessState != nil {
@@ -356,17 +363,12 @@ func (p *Process) isAutoRestart() bool {
 			return err == nil && !p.inExitCodes(exitCode)
 		}
 	}
-	return false
 
+	return false
 }
 
 func (p *Process) inExitCodes(exitCode int) bool {
-	for _, code := range p.getExitCodes() {
-		if code == exitCode {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.getExitCodes(), exitCode)
 }
 
 func (p *Process) getExitCode() (int, error) {
@@ -482,8 +484,8 @@ func (p *Process) setProgramRestartChangeMonitor(programPath string) {
 
 }
 
-// wait for the started program exit
-func (p *Process) waitForExit(startSecs int64) {
+// waitForExit waits for the program exit
+func (p *Process) waitForExit() {
 	p.cmd.Wait()
 	if p.cmd.ProcessState != nil {
 		log.WithFields(log.Fields{"program": p.GetName()}).Infof("program stopped with status:%v", p.cmd.ProcessState)
@@ -529,20 +531,26 @@ func (p *Process) monitorProgramIsRunning(endTime time.Time, monitorExited *int3
 	}
 }
 
-// 这个函数可能有以下几种执行完成的情况：
+// This function may complete execution in the following scenarios:
 //
-// 1. 程序正在运行中，因此函数直接返回。
-// 2. 程序尚未运行，函数开始尝试多次启动程序，直到启动成功。
-// 3. 程序成功启动并正在运行中，函数启动了一个后台监视程序来监视程序运行情况，并向 `finishCb` 函数传递一个标记告知程序已停止，函数直接返回。
-// 4. 程序启动失败，超出了尝试次数，函数将程序状态标记为 `FATAL`，并向 `finishCb` 函数传递一个标记告知程序已停止，函数直接返回。
-// 5. 程序被终止或运行失败，超出了重试次数，函数将程序状态标记为 `EXITED`，并向 `finishCb` 函数传递一个标记告知程序已停止，函数直接返回。
+// 1. The program is already running, so the function returns directly.
+// 2. The program is not yet running, so the function starts attempting to launch the program multiple
+// times until it starts successfully.
+// 3. The program starts successfully and is running, the function starts a background monitor
+// to watch the program's execution status, passes a flag to the `finishCb` function indicating
+// the program has stopped, and returns directly.
+// 4. The program fails to start and exceeds the retry limit, the function marks the program state
+// as `FATAL`, passes a flag to the `finishCb` function indicating the program has stopped, and returns directly.
+// 5. The program is terminated or fails to run and exceeds the retry limit, the function marks the program
+// state as `EXITED`, passes a flag to the `finishCb` function indicating the program has stopped, and returns directly.
+
 func (p *Process) run(finishCb func()) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	// check if the program is in running state
 	if p.isRunning() {
-		log.WithFields(log.Fields{"program": p.GetName()}).Info("Don't start program because it is running")
+		log.WithFields(log.Fields{"program": p.GetName()}).Warn("Don't start program because it is running")
 		finishCb()
 		return
 	}
@@ -563,7 +571,7 @@ func (p *Process) run(finishCb func()) {
 		if restartPause > 0 && atomic.LoadInt32(p.retryTimes) != 0 {
 			// pause
 			p.lock.Unlock()
-			log.WithFields(log.Fields{"program": p.GetName()}).Info("don't restart the program, start it after ", restartPause, " seconds")
+			log.WithFields(log.Fields{"program": p.GetName()}).Info("Don't restart the program, start it after ", restartPause, " seconds")
 			time.Sleep(time.Duration(restartPause) * time.Second)
 			p.lock.Lock()
 		}
@@ -573,7 +581,7 @@ func (p *Process) run(finishCb func()) {
 
 		err := p.createProgramCommand()
 		if err != nil {
-			p.failToStartProgram("fail to create program", finishCbWrapper)
+			p.failToStartProgram("Failed to create program", finishCbWrapper)
 			break
 		}
 
@@ -581,10 +589,10 @@ func (p *Process) run(finishCb func()) {
 
 		if err != nil {
 			if atomic.LoadInt32(p.retryTimes) >= p.getStartRetries() {
-				p.failToStartProgram(fmt.Sprintf("fail to start program with error:%v", err), finishCbWrapper)
+				p.failToStartProgram(fmt.Sprintf("Failed to start program with error: %v", err), finishCbWrapper)
 				break
 			} else {
-				log.WithFields(log.Fields{"program": p.GetName()}).Info("fail to start program with error:", err)
+				log.WithFields(log.Fields{"program": p.GetName()}).Info("Failed to start program with error: ", err)
 				p.changeStateTo(Backoff)
 				continue
 			}
@@ -637,7 +645,7 @@ func (p *Process) run(finishCb func()) {
 
 		procExitC := make(chan struct{})
 		go func() {
-			p.waitForExit(startSecs)
+			p.waitForExit()
 			close(procExitC)
 		}()
 
@@ -693,28 +701,32 @@ func (p *Process) changeStateTo(procState State) {
 	if p.config.IsProgram() {
 		progName := p.config.GetProgramName()
 		groupName := p.config.GetGroupName()
-		if procState == Starting {
+		switch procState {
+		case Starting:
 			events.EmitEvent(events.CreateProcessStartingEvent(progName, groupName, p.state.String(), int(atomic.LoadInt32(p.retryTimes))))
-		} else if procState == Running {
+		case Running:
 			events.EmitEvent(events.CreateProcessRunningEvent(progName, groupName, p.state.String(), p.cmd.Process.Pid))
-		} else if procState == Backoff {
+		case Backoff:
 			events.EmitEvent(events.CreateProcessBackoffEvent(progName, groupName, p.state.String(), int(atomic.LoadInt32(p.retryTimes))))
-		} else if procState == Stopping {
+		case Stopping:
 			events.EmitEvent(events.CreateProcessStoppingEvent(progName, groupName, p.state.String(), p.cmd.Process.Pid))
-		} else if procState == Exited {
+		case Exited:
 			exitCode, err := p.getExitCode()
 			expected := 0
 			if err == nil && p.inExitCodes(exitCode) {
 				expected = 1
 			}
 			events.EmitEvent(events.CreateProcessExitedEvent(progName, groupName, p.state.String(), expected, p.cmd.Process.Pid))
-		} else if procState == Fatal {
+		case Fatal:
 			events.EmitEvent(events.CreateProcessFatalEvent(progName, groupName, p.state.String()))
-		} else if procState == Stopped {
+		case Stopped:
 			events.EmitEvent(events.CreateProcessStoppedEvent(progName, groupName, p.state.String(), p.cmd.Process.Pid))
-		} else if procState == Unknown {
+		case Unknown:
 			events.EmitEvent(events.CreateProcessUnknownEvent(progName, groupName, p.state.String()))
 		}
+	}
+	if p.stateChangeCallback != nil {
+		p.stateChangeCallback(p, p.state, procState)
 	}
 	p.state = procState
 }
@@ -771,12 +783,12 @@ func (p *Process) setEnv() {
 	}
 }
 
-// 辅助函数：带覆盖的环境变量追加
+// Helper function: append environment variables with override
 func mergeKeyValueArrays(arr1, arr2 []string) []string {
 	keySet := make(map[string]bool)
 	result := make([]string, 0, len(arr1)+len(arr2))
 
-	// 处理第一个数组，保留所有元素
+	// Process the first array, keep all elements
 	for _, item := range arr1 {
 		if key := strings.SplitN(item, "=", 2)[0]; key != "" {
 			keySet[key] = true
@@ -784,7 +796,7 @@ func mergeKeyValueArrays(arr1, arr2 []string) []string {
 		result = append(result, item)
 	}
 
-	// 处理第二个数组，跳过已存在的键
+	// Process the second array, skip existing keys
 	for _, item := range arr2 {
 		if key := strings.SplitN(item, "=", 2)[0]; key != "" {
 			if !keySet[key] {
@@ -978,26 +990,26 @@ func (p *Process) setUser() error {
 	}
 	setUserID(p.cmd.SysProcAttr, uint32(uid), uint32(gid))
 
-	// 强制设置关键环境变量
+	// Force set critical environment variables
 	p.cmd.Env = appendEnvWithOverride(p.cmd.Env,
-		"HOME", u.HomeDir, // 强制HOME目录
-		"USER", u.Username, // 用户名
-		"LOGNAME", u.Username, // 登录名
-		"PATH", defaultPath(u), // 安全PATH
+		"HOME", u.HomeDir, // Force HOME directory
+		"USER", u.Username, // Username
+		"LOGNAME", u.Username, // Login name
+		"PATH", defaultPath(u), // Safe PATH
 	)
 
-	// 删除root残留的环境变量
+	// Remove root residual environment variables
 	filterRootEnv(&p.cmd.Env)
 
 	return nil
 }
 
-// 辅助函数：带覆盖的环境变量追加
+// Helper function: append environment variables with override
 func appendEnvWithOverride(env []string, pairs ...string) []string {
 	newEnv := make([]string, 0, len(env)+len(pairs)/2)
 	set := make(map[string]bool)
 
-	// 先添加新变量
+	// Add new variables first
 	for i := 0; i < len(pairs); i += 2 {
 		key := pairs[i]
 		value := pairs[i+1]
@@ -1005,7 +1017,7 @@ func appendEnvWithOverride(env []string, pairs ...string) []string {
 		set[key] = true
 	}
 
-	// 保留未覆盖的旧变量
+	// Keep unoverridden old variables
 	for _, e := range env {
 		parts := strings.SplitN(e, "=", 2)
 		if len(parts) < 2 || set[parts[0]] {
@@ -1017,16 +1029,16 @@ func appendEnvWithOverride(env []string, pairs ...string) []string {
 	return newEnv
 }
 
-// 辅助函数：生成安全PATH
+// Helper function: generate safe PATH
 func defaultPath(u *user.User) string {
-	// 根据用户类型返回不同PATH
+	// Return different PATH based on user type
 	if u.Uid == "0" {
 		return "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	}
 	return "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
 }
 
-// 辅助函数：过滤危险的环境变量
+// Helper function: filter dangerous environment variables
 func filterRootEnv(env *[]string) {
 	filtered := make([]string, 0, len(*env))
 	for _, e := range *env {
@@ -1113,4 +1125,48 @@ func (p *Process) GetStatus() string {
 		return p.cmd.ProcessState.String()
 	}
 	return "running"
+}
+
+// GetDependencies returns the list of programs this process depends on
+func (p *Process) GetDependencies() []string {
+	if !p.config.HasParameter("depends_on") {
+		return []string{}
+	}
+
+	dependsOn := p.config.GetString("depends_on", "")
+	if dependsOn == "" {
+		return []string{}
+	}
+
+	deps := make([]string, 0)
+	for dep := range strings.SplitSeq(dependsOn, ",") {
+		dep = strings.TrimSpace(dep)
+		if dep != "" {
+			deps = append(deps, dep)
+		}
+	}
+	return deps
+}
+
+// HasDependencies returns true if this process has dependencies
+func (p *Process) HasDependencies() bool {
+	return len(p.GetDependencies()) > 0
+}
+
+// GetDependencyStabilityTime returns the time in seconds a dependency should be stable before considering it ready
+// This uses the same startsecs value since it represents the same concept
+func (p *Process) GetDependencyStabilityTime() int64 {
+	return p.getStartSeconds()
+}
+
+// SetStateChangeCallback sets the callback function that will be called when the process state changes
+func (p *Process) SetStateChangeCallback(callback StateChangeCallback) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.stateChangeCallback = callback
+}
+
+// IsStoppedByUser returns true if the process was stopped by user action
+func (p *Process) IsStoppedByUser() bool {
+	return p.stopByUser
 }

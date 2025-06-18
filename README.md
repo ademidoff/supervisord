@@ -151,15 +151,17 @@ Supervised program settings configured in [program:programName] section and incl
 - **restart_file_pattern**. If a file changes under restart_directory_monitor and filename matches this pattern, the supervised command will be restarted.
 - **restart_cmd_when_file_changed**. The command to restart the program if any monitored files under **restart_directory_monitor** with pattern **restart_file_pattern** are changed.
 - **restart_signal_when_file_changed**. The signal will be sent to the proram, such as Nginx, for restarting if any monitored files under **restart_directory_monitor** with pattern **restart_file_pattern** are changed.
-- **depends_on**. Define supervised command start dependency. If program A depends on program B, C, the program B, C will be started before program A. Example:
+- **depends_on**. Define supervised command start dependency. If program A depends on program B, C, the program B, C will be started before program A and must be stable (running for their respective **startsecs** duration) before program A is started. If any dependency fails or exits, program A will not be started. Example:
 
 ```ini
 [program:A]
 depends_on = B, C
 
 [program:B]
+startsecs = 3  # B must run for 3 seconds to be considered stable (A waits for this)
 ...
 [program:C]
+startsecs = 2  # C must run for 2 seconds to be considered stable (A waits for this)
 ...
 ```
 

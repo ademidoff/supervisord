@@ -1,8 +1,9 @@
 .idea
 supervisord
-supervisord.log
 supervisord.pid
-test.log*
+coverage.html
+coverage.out
+*.log*
 .tags*
 debug
 go-debug.json

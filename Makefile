@@ -24,3 +24,30 @@ build-linux:
 build-darwin:
 	go generate
 	GOOS=darwin GOARCH=arm64 go build -tags release -a -ldflags "$(LDFLAGS) -s" -o supervisord
+
+gotest:
+	go test -v ./... -coverprofile=coverage.out
+	go tool cover -html=coverage.out -o coverage.html
+
+show:
+	ps aux | grep -E '[s]upervisord|[s]leep' || true
+
+kill:
+	ps aux | grep -E '[s]upervisord|[s]leep' | awk '{print $$2}' | xargs kill -9
+
+run:
+	echo -n > supervisord.log
+	./supervisord -c supervisord.conf -d
+
+status:
+	./supervisord ctl -v status || true
+
+stop:
+	./supervisord ctl shutdown || true
+
+all:
+	make kill
+	make build
+	make run
+	sleep 2s
+	make status

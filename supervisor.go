@@ -90,10 +90,12 @@ type ProcessTailLog struct {
 
 // NewSupervisor create a Supervisor object with supervisor configuration file
 func NewSupervisor(configFile string) *Supervisor {
-	return &Supervisor{config: config.NewConfig(configFile),
+	return &Supervisor{
+		config:     config.NewConfig(configFile),
 		procMgr:    process.NewManager(),
 		xmlRPC:     NewXMLRPC(),
-		restarting: false}
+		restarting: false,
+	}
 }
 
 // GetConfig get the loaded supervisor configuration
@@ -173,6 +175,7 @@ func (s *Supervisor) ClearLog(r *http.Request, args *struct{}, reply *struct{ Re
 func (s *Supervisor) Shutdown(r *http.Request, args *struct{}, reply *struct{ Ret bool }) error {
 	reply.Ret = true
 	log.Info("received rpc request to stop all processes & exit")
+	s.procMgr.StopDependencyMonitor()
 	s.procMgr.StopAllProcesses()
 	go func() {
 		time.Sleep(1 * time.Second)
@@ -339,7 +342,7 @@ func (s *Supervisor) StopAllProcesses(r *http.Request, args *struct {
 		proc.Stop(args.Wait)
 	}, finishedProcCh)
 
-	for i := 0; i < n; i++ {
+	for range n {
 		proc, ok := <-finishedProcCh
 		if ok {
 			processInfo := *getProcessInfo(proc)
@@ -474,10 +477,11 @@ func (s *Supervisor) Reload(restart bool) (addedGroup []string, changedGroup []s
 func (s *Supervisor) WaitForExit() {
 	for {
 		if s.IsRestarting() {
+			s.procMgr.StopDependencyMonitor()
 			s.procMgr.StopAllProcesses()
 			break
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
 }
 
@@ -611,15 +615,15 @@ func (s *Supervisor) ReloadConfig(r *http.Request, args *struct{}, reply *types.
 	log.Info("start to reload config")
 	addedGroup, changedGroup, removedGroup, err := s.Reload(false)
 	if len(addedGroup) > 0 {
-		log.WithFields(log.Fields{"groups": strings.Join(addedGroup, ",")}).Info("added groups")
+		log.WithFields(log.Fields{"groups": strings.Join(addedGroup, ",")}).Info("Added groups")
 	}
 
 	if len(changedGroup) > 0 {
-		log.WithFields(log.Fields{"groups": strings.Join(changedGroup, ",")}).Info("changed groups")
+		log.WithFields(log.Fields{"groups": strings.Join(changedGroup, ",")}).Info("Changed groups")
 	}
 
 	if len(removedGroup) > 0 {
-		log.WithFields(log.Fields{"groups": strings.Join(removedGroup, ",")}).Info("removed groups")
+		log.WithFields(log.Fields{"groups": strings.Join(removedGroup, ",")}).Info("Removed groups")
 	}
 	reply.AddedGroup = addedGroup
 	reply.ChangedGroup = changedGroup
@@ -643,7 +647,7 @@ func (s *Supervisor) RemoveProcessGroup(r *http.Request, args *struct{ Name stri
 func (s *Supervisor) ReadProcessStdoutLog(r *http.Request, args *ProcessLogReadInfo, reply *struct{ LogData string }) error {
 	proc := s.procMgr.Find(args.Name)
 	if proc == nil {
-		return fmt.Errorf("No such process %s", args.Name)
+		return fmt.Errorf("no such process %s", args.Name)
 	}
 	var err error
 	reply.LogData, err = proc.StdoutLog.ReadLog(int64(args.Offset), int64(args.Length))
@@ -654,7 +658,7 @@ func (s *Supervisor) ReadProcessStdoutLog(r *http.Request, args *ProcessLogReadI
 func (s *Supervisor) ReadProcessStderrLog(r *http.Request, args *ProcessLogReadInfo, reply *struct{ LogData string }) error {
 	proc := s.procMgr.Find(args.Name)
 	if proc == nil {
-		return fmt.Errorf("No such process %s", args.Name)
+		return fmt.Errorf("no such process %s", args.Name)
 	}
 	var err error
 	reply.LogData, err = proc.StderrLog.ReadLog(int64(args.Offset), int64(args.Length))
@@ -665,7 +669,7 @@ func (s *Supervisor) ReadProcessStderrLog(r *http.Request, args *ProcessLogReadI
 func (s *Supervisor) TailProcessStdoutLog(r *http.Request, args *ProcessLogReadInfo, reply *ProcessTailLog) error {
 	proc := s.procMgr.Find(args.Name)
 	if proc == nil {
-		return fmt.Errorf("No such process %s", args.Name)
+		return fmt.Errorf("no such process %s", args.Name)
 	}
 	var err error
 	reply.LogData, reply.Offset, reply.Overflow, err = proc.StdoutLog.ReadTailLog(int64(args.Offset), int64(args.Length))
@@ -676,7 +680,7 @@ func (s *Supervisor) TailProcessStdoutLog(r *http.Request, args *ProcessLogReadI
 func (s *Supervisor) TailProcessStderrLog(r *http.Request, args *ProcessLogReadInfo, reply *ProcessTailLog) error {
 	proc := s.procMgr.Find(args.Name)
 	if proc == nil {
-		return fmt.Errorf("No such process %s", args.Name)
+		return fmt.Errorf("no such process %s", args.Name)
 	}
 	var err error
 	reply.LogData, reply.Offset, reply.Overflow, err = proc.StderrLog.ReadTailLog(int64(args.Offset), int64(args.Length))
@@ -687,7 +691,7 @@ func (s *Supervisor) TailProcessStderrLog(r *http.Request, args *ProcessLogReadI
 func (s *Supervisor) ClearProcessLogs(r *http.Request, args *struct{ Name string }, reply *struct{ Success bool }) error {
 	proc := s.procMgr.Find(args.Name)
 	if proc == nil {
-		return fmt.Errorf("No such process %s", args.Name)
+		return fmt.Errorf("no such process %s", args.Name)
 	}
 	err1 := proc.StdoutLog.ClearAllLogFile()
 	err2 := proc.StderrLog.ClearAllLogFile()
